@@ -27,9 +27,9 @@ int main(int argc, char *argv[])
     // 这是用来测试版本穿梭的一条注释
 
     // 测试显示文件
-    STRU_GETFILELIST_RQ sgr;
-    sgr.m_userID = 1;\
-    i->dealData(0,(char*)&sgr);
+    // STRU_GETFILELIST_RQ sgr;
+    // sgr.m_userID = 1;
+    // i->dealData(0,(char*)&sgr);
 
     return a.exec();
 }
