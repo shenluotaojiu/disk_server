@@ -19,8 +19,6 @@ class TCPKernel : public iKernel
 private:
     TCPKernel();
     ~TCPKernel();
-    TCPKernel(const TCPKernel&) = delete;
-    TCPKernel& operator=(const TCPKernel&) = delete;
 public:
     virtual bool open();
     virtual void close();
@@ -33,8 +31,7 @@ private:
     CMySql *m_pSql = nullptr;
     Inet *m_pNet = nullptr;
     static iKernel *m_pKernel;
-    const char* m_szSystemPath = "../../disk/";
-
+    const char* m_szSystemPath = "D:/code_practice/Web_disk/disk/";
 };
 
 #endif // TCPKERNEL_H

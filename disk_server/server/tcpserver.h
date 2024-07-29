@@ -4,8 +4,7 @@
 #include <windows.h>
 #include <map>
 #include "inet.h"
-#include "kernel/tcpkernel.h"
-
+//#include "kernel/tcpkernel.h"
 
 class TCPServer : public Inet
 {

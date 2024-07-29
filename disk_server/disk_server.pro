@@ -20,3 +20,6 @@ include(./kernel/kernel.pri)
 
 HEADERS += \
     Packdef.h
+
+DISTFILES += \
+    ../README.md

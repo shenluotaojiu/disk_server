@@ -92,7 +92,7 @@ void TCPKernel::registerrq(SOCKET sock, char *szbuf)
     sprintf(szsql,"insert into user(u_tel,u_name,u_password) values(%lld,'%s','%s')",
             psrr->m_tel,psrr->m_szName,psrr->m_szPassword);
     bool flag = m_pSql->UpdateMySql(szsql);
-    if(flag) //注册成功后为用户创建一个目录
+    if(flag)
     {
         list<string> lststr;
         sprintf(szsql,"select u_id from user where u_tel = %lld",psrr->m_tel);
@@ -103,12 +103,12 @@ void TCPKernel::registerrq(SOCKET sock, char *szbuf)
             lststr.pop_front();
             char szPath[MAX_PATH] = {0};
             sprintf(szPath,"%s%s",m_szSystemPath,strUserId.c_str());
-            CreateDirectoryA(szPath,0);
+            CreateDirectoryA(szPath,0); //注册成功后为用户创建一个目录
         }
     }
     STRU_REGISTER_RS srr;
     srr.m_szResult = flag ? _register_success : _register_err;
-    // 发送回复
+    // 向客户端发送回复
     m_pNet->sendData(sock,(const char*)&srr,sizeof(srr));
 }
 
@@ -117,15 +117,15 @@ void TCPKernel::loginrq(SOCKET sock, char *szbuf)
     list<string> lststr;
     STRU_LOGIN_RQ* pslr = (STRU_LOGIN_RQ*) szbuf;
     char szsql[SQLLEN] = {0};
-    sprintf(szsql,"select u_password u_id from user where u_name = '%s'",pslr->m_szName);
+    sprintf(szsql,"select u_password,u_id from user where u_name = '%s'",pslr->m_szName);
     m_pSql->SelectMySql(szsql,2,lststr);
     // 正确，错误
     STRU_LOGIN_RS sls;
     sls.m_szResult = _login_usernoexists;   // 没查到用户名
     if(lststr.size() > 0)                   // 查到了
     {
-        string u_id = lststr.front();lststr.pop_front();
         string u_pw = lststr.front();lststr.pop_front();
+        string u_id = lststr.front();lststr.pop_front();
         if(u_pw == pslr->m_szPassword)      // 密码匹配成功
         {
             sls.m_szResult = _login_success;
