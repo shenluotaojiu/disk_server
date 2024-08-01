@@ -11,6 +11,8 @@
 #define MAXSIZE  45
 #define MAXFILENUM  15
 #define SQLLEN 256
+#define ONEPAGE 4096
+
 
 // 注册成功失败
 #define _register_err   0
@@ -20,6 +22,12 @@
 #define _login_password_err   0
 #define _login_usernoexists   2
 #define _login_success        1
+
+// 上传文件方式
+#define _uploadfile_normal 0
+#define _uploadfile_continue 1
+#define _uploadfile_flash 2
+#define _uploadfile_isuploaded 3
 
 //申请账号
 #define _default_register_rq      _default_base +1
@@ -31,19 +39,24 @@
 #define _default_getfilelist_rq      _default_base +5
 #define _default_getfilelist_rs      _default_base +6
 //上传文件
+#define _default_upload_fileinfo_rq _default_base+7
+#define _default_upload_fileinfo_rs _default_base+8
+//上传文件块
+#define _default_upload_fileblock_rq _default_base+9
+#define _default_upload_fileblock_rs _default_base+10
 
-//下载文件
-//删除文件
-//搜索文件
+    //下载文件
+    //删除文件
+    //搜索文件
 
-//分享
-//提取链接
-//添加好友
+    //分享
+    //提取链接
+    //添加好友
 
 
-//协议包
-//申请账号
-struct STRU_BASE {
+    //协议包
+    //申请账号
+    struct STRU_BASE {
 protected:
     char m_nType;
 };
@@ -99,6 +112,64 @@ struct STRU_GETFILELIST_RS :public STRU_BASE{
     FILEINFO m_aryFile[MAXFILENUM];
     int m_nFileNum;
 };
-
+//上传文件
+struct STRU_UPLOADFILEINFO_RQ :public STRU_BASE{
+    STRU_UPLOADFILEINFO_RQ(){
+        m_nType = _default_upload_fileinfo_rq;
+    }
+    long long m_userID;
+    char m_szFileName[MAXSIZE];
+    long long m_fileSize;
+    char m_szMD5[MAXSIZE];
+};
+struct STRU_UPLOADFILEINFO_RS :public STRU_BASE{
+    STRU_UPLOADFILEINFO_RS(){
+        m_nType = _default_upload_fileinfo_rs;
+    }
+    char m_szFileName[MAXSIZE];
+    char m_szResult;
+    long m_pos;         //偏移量
+    long long m_fileID;
+};
+struct STRU_UPLOADFILEBLOCK_RQ :public STRU_BASE{
+    STRU_UPLOADFILEBLOCK_RQ(){
+        m_nType = _default_upload_fileblock_rq;
+    }
+    long long m_userID;
+    char m_szFileContent[ONEPAGE];
+    long long m_fileID;
+    long m_fileblocksize;
+};
+// struct STRU_UPLOADFILEBLOCK_RS :public STRU_BASE{
+//     STRU_UPLOADFILEBLOCK_RS(){
+//         m_nType = _default_upload_fileinfo_rs;
+//     }
+//     char m_szFileName[MAXSIZE];
+//     char m_szResult;
+//     long m_pos;         //偏移量
+// };
 
 #endif // PACKDEF_H
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

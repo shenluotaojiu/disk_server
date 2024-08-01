@@ -7,6 +7,8 @@ _BEGIN_PROTOCOL_MAP
     PM(_default_login_rq,&TCPKernel::loginrq)
     PM(_default_register_rq,&TCPKernel::registerrq)
     PM(_default_getfilelist_rq,&TCPKernel::getfilelistrq)
+    PM(_default_upload_fileinfo_rq,&TCPKernel::uploadfileinforq)
+    PM(_default_upload_fileblock_rq,&TCPKernel::uploadfileblockrq)
 _END_PROTOCOL_MAP
 
 TCPKernel::TCPKernel()
@@ -172,6 +174,106 @@ void TCPKernel::getfilelistrq(SOCKET sock, char *szbuf)
             count = 0;
             m_pNet->sendData(sock,(char*)&sgr,sizeof(sgr));
         }
+    }
+
+}
+
+void TCPKernel::uploadfileinforq(SOCKET sock, char *szbuf)
+{
+    STRU_UPLOADFILEINFO_RQ* psur = (STRU_UPLOADFILEINFO_RQ*)szbuf;
+    char szsql[SQLLEN] = {0};
+    sprintf(szsql,"select u_id,f_id from myview where f_md5 ='%s'",psur->m_szMD5);
+    list<string> lststr;
+    STRU_UPLOADFILEINFO_RS sur;
+    strcpy(sur.m_szFileName,psur->m_szFileName);
+    sur.m_szResult = _uploadfile_normal;
+
+    // 判断服务器上是否存在这个文件
+    m_pSql->SelectMySql(szsql,2,lststr);
+
+    if(lststr.size() > 0)// 存在
+    {
+        long long u_id = atoll(lststr.front().c_str());lststr.pop_front();
+        long long f_id = atoll(lststr.front().c_str());lststr.pop_front();
+        sur.m_fileID = f_id;
+        if(u_id == psur->m_userID)  // 如果这个文件是我自己传的
+        {
+            //判断map中是否有f_id所指向的信息来判断是否为断点续传
+            if(m_mapFileIdtoFileInfo.find(f_id) != m_mapFileIdtoFileInfo.end())
+            {
+                // 1.断点续传
+                sur.m_szResult = _uploadfile_continue;
+            }
+            // 2.重复上传
+            sur.m_szResult = _uploadfile_isuploaded;
+        }
+        else                        // 如果是别人传的
+        {
+            sur.m_szResult = _uploadfile_flash;
+            // 将文件与用户映射，文件引用计数+1
+            sprintf(szbuf,"update file set f_count = f_count+1 where f_md5 = '%s'",psur->m_szMD5);
+            m_pSql->UpdateMySql(szbuf);
+            sprintf(szbuf,"insert into user_file(u_id,f_id) values(%lld,%lld)",psur->m_userID,f_id);
+            m_pSql->UpdateMySql(szbuf);
+            // 秒传
+        }
+    }
+    else// 不存在
+    {
+        // 在指定位置创建文件
+        char szPath[MAX_PATH] = {0};
+        sprintf(szPath,"%s%lld/%s",m_szSystemPath,psur->m_userID,psur->m_szFileName);
+
+        //将文件信息写入数据库
+        sprintf(szsql,"insert into file(f_name,f_size,f_path,f_md5) values('%s',%lld,'%s','%s')",
+                psur->m_szFileName,psur->m_fileSize,szPath,psur->m_szMD5);
+        m_pSql->UpdateMySql(szsql);
+        // 用户文件映射
+        sprintf(szsql,"select f_id from file where f_md5 = '%s'",psur->m_szMD5);
+        m_pSql->SelectMySql(szsql,1,lststr);
+        if(lststr.size() > 0)
+        {
+            long long fileId = atoll(lststr.front().c_str());lststr.pop_front();
+            sur.m_fileID = fileId;
+            sprintf(szsql,"insert into user_file(u_id,f_id) values(%lld,%lld)",psur->m_userID,fileId);
+            m_pSql->UpdateMySql(szsql);
+        }
+
+
+
+        //正常传文件
+        FILE* pfile = fopen(szPath,"wb");
+
+        stru_fileinfo* p = new stru_fileinfo();
+        p->m_fileid = sur.m_fileID;
+        p->m_filesize = psur->m_fileSize;
+        p->m_filepos = 0;
+        p->m_pfile = pfile;
+        p->m_userid = psur->m_userID;
+        m_mapFileIdtoFileInfo[sur.m_fileID] = p;
+    }
+
+    // 发送回复
+    m_pNet->sendData(sock,(char*)&sur,sizeof(sur));
+
+
+
+}
+
+void TCPKernel::uploadfileblockrq(SOCKET sock, char *szbuf)
+{
+    STRU_UPLOADFILEBLOCK_RQ* psur = (STRU_UPLOADFILEBLOCK_RQ*)szbuf;
+    stru_fileinfo* p = m_mapFileIdtoFileInfo[psur->m_fileID];
+    //将文件内容写入文件，等到接收大小总和等于文件大小时停止接收
+    size_t nWriteNum = fwrite(psur->m_szFileContent,sizeof(char),psur->m_fileblocksize,p->m_pfile);
+    if(nWriteNum > 0)
+        p->m_filepos+=nWriteNum;
+
+    if(p->m_filepos == p->m_filesize)
+    {
+        fclose(p->m_pfile);
+        delete p;p = nullptr;
+        m_mapFileIdtoFileInfo.erase(psur->m_fileID);
     }
 
 }
