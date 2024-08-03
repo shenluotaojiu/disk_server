@@ -17,6 +17,7 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 include(./server/server.pri)
 include(./mysql/mysql.pri)
 include(./kernel/kernel.pri)
+include(./threadpool/threadpool.pri)
 
 HEADERS += \
     Packdef.h

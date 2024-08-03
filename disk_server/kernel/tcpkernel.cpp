@@ -9,12 +9,19 @@ _BEGIN_PROTOCOL_MAP
     PM(_default_getfilelist_rq,&TCPKernel::getfilelistrq)
     PM(_default_upload_fileinfo_rq,&TCPKernel::uploadfileinforq)
     PM(_default_upload_fileblock_rq,&TCPKernel::uploadfileblockrq)
+    PM(_default_sharelink_rq,&TCPKernel::sharelinkrq)
+    PM(_default_download_fileinfo_rq,&TCPKernel::downloadfilerq)
+    PM(_default_download_fileblock_rq,&TCPKernel::downloadblockrq)
 _END_PROTOCOL_MAP
 
 TCPKernel::TCPKernel()
 {
     m_pSql = new CMySql();
     m_pNet = new TCPServer();
+
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    m_tp.createThreadPool(1,si.dwNumberOfProcessors*2);
 }
 
 TCPKernel::~TCPKernel()
@@ -204,6 +211,7 @@ void TCPKernel::uploadfileinforq(SOCKET sock, char *szbuf)
                 // 1.断点续传
                 sur.m_szResult = _uploadfile_continue;
             }
+            else
             // 2.重复上传
             sur.m_szResult = _uploadfile_isuploaded;
         }
@@ -239,8 +247,6 @@ void TCPKernel::uploadfileinforq(SOCKET sock, char *szbuf)
             m_pSql->UpdateMySql(szsql);
         }
 
-
-
         //正常传文件
         FILE* pfile = fopen(szPath,"wb");
 
@@ -255,16 +261,13 @@ void TCPKernel::uploadfileinforq(SOCKET sock, char *szbuf)
 
     // 发送回复
     m_pNet->sendData(sock,(char*)&sur,sizeof(sur));
-
-
-
 }
 
 void TCPKernel::uploadfileblockrq(SOCKET sock, char *szbuf)
 {
     STRU_UPLOADFILEBLOCK_RQ* psur = (STRU_UPLOADFILEBLOCK_RQ*)szbuf;
     stru_fileinfo* p = m_mapFileIdtoFileInfo[psur->m_fileID];
-    //将文件内容写入文件，等到接收大小总和等于文件大小时停止接收
+    //将文件内容写入文件，等到接收大小总和等于文件大小时停止接收o
     size_t nWriteNum = fwrite(psur->m_szFileContent,sizeof(char),psur->m_fileblocksize,p->m_pfile);
     if(nWriteNum > 0)
         p->m_filepos+=nWriteNum;
@@ -278,28 +281,95 @@ void TCPKernel::uploadfileblockrq(SOCKET sock, char *szbuf)
 
 }
 
+void TCPKernel::sharelinkrq(SOCKET sock, char *szbuf)
+{
+    //通过用户id和文件名字找到文件id  向user
+    STRU_SHARELINK_RQ *pssr = (STRU_SHARELINK_RQ*)szbuf;
+
+    STRU_SHARELINK_RS ssr;
+    strcpy(ssr.m_szFileName, pssr->m_szFileName);
+    ssr.m_szResult = _sharelink_fail;
+
+    char szsql[SQLLEN] = {0};
+    list<string> lststr;
+    sprintf(szsql,"select f_id from myview where u_id = %lld and f_name = '%s'",pssr->m_userID,pssr->m_szFileName);
+    m_pSql->SelectMySql(szsql,1,lststr);
+    if(lststr.size() > 0)
+    {
+        string strFileId = lststr.front();lststr.pop_front();
+        sprintf(szbuf,"insert into user_sharefile(u_id,f_id,code) values(%lld,%lld,'%s')",
+                pssr->m_userID,atoll(strFileId.c_str()),pssr->m_szCode);
+        m_pSql->UpdateMySql(szsql);
+        ssr.m_szResult = _sharelink_succeed;
+    }
+    //发送回复
+    m_pNet->sendData(sock,(char*)&ssr,sizeof(ssr));
+}
+
+void TCPKernel::downloadfilerq(SOCKET sock, char *szbuf)
+{
+    STRU_DOWNLOADFILE_RQ* psdr = (STRU_DOWNLOADFILE_RQ*)szbuf;
+    //通过文件名和用户id 来获取文件id
+    char szsql[SQLLEN] = {0};
+    sprintf(szsql,"select f_id from myview where f_name = '%s' and u_id = %lld",psdr->fileName,psdr->userId);
+    list<string> lststr;
+    m_pSql->SelectMySql(szsql,1,lststr);
+
+    STRU_DOWNLOADFILE_RS sdr;
+    sdr.result = _dowloadfilerq_fail;
+    strcpy(sdr.fileName,psdr->fileName);
 
 
+    //如果可以找到就是返回成功，否则失败。
+    if(lststr.size() > 0)
+    {
+        sdr.f_id = atoll(lststr.front().c_str());
+        sdr.result = _dowloadfilerq_succeed;
+    }
 
+    //发送包
+    m_pNet->sendData(sock,(char*)&sdr,sizeof(sdr));
+}
 
+void TCPKernel::downloadblockrq(SOCKET sock, char *szbuf)
+{
+    STRU_DOWNLOADBLOCK_RQ* psdr = (STRU_DOWNLOADBLOCK_RQ*)szbuf;
+    // 文件路径，文件id，kernel
+    char szsql[SQLLEN] = {0};
+    sprintf(szsql,"select f_path,f_size from myview where f_id = %lld",psdr->fileId);
+    list<string> lststr;
+    m_pSql->SelectMySql(szsql,2,lststr);
+    if(lststr.size() > 0)
+    {
+        string f_path = lststr.front();lststr.pop_front();
+        long long f_size = atoll(lststr.front().c_str());lststr.pop_front();
+        itask* ptask = new sendFile(m_pNet,psdr->fileId,f_path.c_str(),sock,psdr->m_pos,f_size);
+        m_tp.push(ptask);
+    }
+}
 
+void sendFile::run()
+{
+    FILE* m_pfile = fopen(m_filePath,"rb");
+    STRU_DOWNLOADBLOCK_RS sdr;
+    sdr.m_fileID = m_fileId;
+    sdr.m_fileSize = m_fileSize;
 
+    if(m_pos != 0)  //断点续传,移动偏移量
+        fseek(m_pfile,m_pos,SEEK_SET);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    while(1)
+    {
+        size_t nreadnum = fread(sdr.m_szFileContent,sizeof(char),sizeof(sdr.m_szFileContent),m_pfile);
+        if(nreadnum > 0)
+        {
+            sdr.m_fileblocksize = nreadnum;
+            m_pNet->sendData(sock,(char*)&sdr,sizeof(sdr));
+        }
+        else
+        {
+            break;
+        }
+    }
+    fclose(m_pfile);
+}
